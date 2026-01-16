@@ -2,7 +2,7 @@ import streamlit as st
 import tempfile
 import os
 
-from connection_manager import GraphApp
+from graph_repository import GraphApp
 
 st.set_page_config(page_title="Neo4j Recommender", layout="wide")
 st.title("Neo4j Product Recommender")
