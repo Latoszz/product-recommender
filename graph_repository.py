@@ -1,22 +1,41 @@
+import logging
+
 from neo4j import GraphDatabase
+from neo4j.exceptions import Neo4jError
 from pyvis.network import Network
 from dotenv import load_dotenv
 from os import getenv
 
-
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(
+    __name__
+)
 load_dotenv()
 
 class GraphApp:
-    def __init__(self):
-        self.uri = getenv("NEO4J_URI")
-        self.user = getenv("NEO4J_USER")
-        self.password = getenv("NEO4J_PASSWORD")
+    def __init__(self, uri: str, user: str, password: str):
+        self.uri = uri
+        self.user = user
+        self.password = password
+        self._connect()
 
-        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
-        self.driver.verify_connectivity()
+
+    def _connect(self) -> None:
+        try:
+            self.driver = GraphDatabase.driver(
+                self.uri,
+                auth=(self.user, self.password)
+            )
+            self.driver.verify_connectivity()
+            logger.info("Successfully connected to Neo4j database")
+        except Neo4jError as e:
+            logger.error(f"Failed to connect to Neo4j: {e}")
+            raise
 
     def close(self):
-        self.driver.close()
+        if self.driver:
+            self.driver.close()
+            logger.info("Database connection closed")
 
     def run_query(self, query, parameters=None):
         with self.driver.session() as session:
