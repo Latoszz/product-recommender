@@ -1,18 +1,16 @@
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
-from pyvis.network import Network
 from dotenv import load_dotenv
-from os import getenv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-class GraphApp:
+class GraphRepository:
     def __init__(self, uri: str, user: str, password: str):
         self.uri = uri
         self.user = user
@@ -35,6 +33,20 @@ class GraphApp:
             self.driver.close()
             logger.info("Database connection closed")
 
+    def create_constraints(self) -> None:
+        """Create database constraints for data integrity."""
+        constraints = [
+            "CREATE CONSTRAINT user_name IF NOT EXISTS FOR (u:User) REQUIRE u.name IS UNIQUE",
+            "CREATE CONSTRAINT product_name IF NOT EXISTS FOR (p:Product) REQUIRE p.name IS UNIQUE",
+        ]
+
+        for constraint in constraints:
+            try:
+                self._execute_query(constraint)
+                logger.info(f"Constraint created: {constraint}")
+            except Neo4jError as e:
+                logger.warning(f"Constraint already exists or failed: {e}")
+
     def _execute_query(
         self, query: str, parameters: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
@@ -46,85 +58,239 @@ class GraphApp:
             logger.error(f"Query execution failed: {e}")
             raise
 
-    def add_user(self, name):
-        
-        query = "MERGE (u:User {name: $name})"
-        self._execute_query(query, {"name": name})
+    def add_user(self, name: str) -> bool:
+        if not name or not name.strip():
+            raise ValueError("User name cannot be empty")
 
-    def add_product(self, name):
-        query = "MERGE (p:Product {name: $name})"
-        self._execute_query(query, {"name": name})
+        query = "MERGE (u:User {name: $name}) RETURN u"
+        try:
+            self._execute_query(query, {"name": name.strip()})
+            logger.info(f"User '{name}' added/verified")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to add user '{name}': {e}")
+            return False
 
-    def follow_user(self, user1, user2):
+    def delete_user(self, user_name: str) -> bool:
         query = """
-        MATCH (a:User {name: $u1}), (b:User {name: $u2})
-        MERGE (a)-[:FOLLOWS]->(b)
+        MATCH (u:User {name: $name})
+        DETACH DELETE u
         """
-        self._execute_query(query, {"u1": user1, "u2": user2})
+        try:
+            self._execute_query(query, {"name": user_name})
+            logger.info(f"User '{user_name}' deleted")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to delete user '{user_name}': {e}")
+            return False
 
-    def rate_product(self, user, product, rating, label):
+    def add_product(self, name: str, category: str | None = None) -> bool:
+        if not name or not name.strip():
+            raise ValueError("Product name cannot be empty")
+
+        query = """
+                MERGE (p:Product {name: $name})
+                SET p.category = $category
+                RETURN p
+                """
+        try:
+            self._execute_query(query, {"name": name.strip(), "category": category})
+            logger.info(f"Product '{name}' added/verified")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to add product '{name}': {e}")
+            return False
+
+    def delete_product(self, product_name: str) -> bool:
+        query = """
+        MATCH (p:Product {name: $name})
+        DETACH DELETE p
+        """
+        try:
+            self._execute_query(query, {"name": product_name})
+            logger.info(f"Product '{product_name}' deleted")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to delete product '{product_name}': {e}")
+            return False
+
+    def create_follow_relationship(self, follower: str, followee: str) -> bool:
+        if follower == followee:
+            raise ValueError("A user cannot follow themselves")
+
+        query = """
+                MATCH (a:User {name: $follower}), (b:User {name: $followee})
+                MERGE (a)-[r:FOLLOWS]->(b)
+                RETURN r
+                """
+
+        try:
+            result = self._execute_query(
+                query, {"follower": follower, "followee": followee}
+            )
+            if result:
+                logger.info(f"'{follower}' now follows '{followee}'")
+                return True
+            else:
+                logger.warning(f"Users not found: '{follower}' or '{followee}'")
+                return False
+        except Neo4jError as e:
+            logger.error(f"Failed to create follow relationship: {e}")
+            return False
+
+    def rate_product(
+        self,
+        user: str,
+        product: str,
+        rating: int,
+        rating_type: Literal["recommends", "discourages", "rates"] = "rates",
+    ) -> bool:
         query = """
         MATCH (u:User {name: $user}), (p:Product {name: $product})
         MERGE (u)-[r:RATES]->(p)
-        SET r.rating = $rating, r.type = $label
+        SET r.rating = $rating, r.type = $type
         """
-        self._execute_query(
-            query, {"user": user, "product": product, "rating": rating, "label": label}
-        )
+        try:
+            result = self._execute_query(
+                query,
+                {
+                    "user": user,
+                    "product": product,
+                    "rating": rating,
+                    "type": rating_type,
+                },
+            )
+            if result:
+                logger.info(f"'{user}' rated '{product}': {rating} ({rating_type})")
+                return True
+            else:
+                logger.warning(f"User or product not found: '{user}', '{product}'")
+                return False
+        except Neo4jError as e:
+            logger.error(f"Failed to save rating: {e}")
+            return False
 
-    def get_users(self):
-        return [
-            x["name"] for x in self._execute_query("MATCH (u:User) RETURN u.name as name")
-        ]
+    def get_all_users(self) -> list[str]:
+        query = "MATCH (u:User) RETURN u.name as name ORDER BY name"
+        try:
+            results = self._execute_query(query)
+            return [r["name"] for r in results]
+        except Neo4jError as e:
+            logger.error(f"Failed to retrieve users: {e}")
+            return []
 
-    def get_products(self):
-        return [
-            x["name"] for x in self._execute_query("MATCH (p:Product) RETURN p.name as name")
-        ]
+    def get_all_products(self) -> list[str]:
+        query = "MATCH (p:Product) RETURN p.name as name ORDER BY name"
+        try:
+            results = self._execute_query(query)
+            return [r["name"] for r in results]
+        except Neo4jError as e:
+            logger.error(f"Failed to retrieve products: {e}")
+            return []
 
-    def rec_by_friends(self, user_name, min_friends=1):
+    def recommend_by_friends(
+        self, user_name: str, min_friends: int = 1, min_rating: int = 4
+    ) -> list[dict[str, Any]]:
         query = """
-        MATCH (u:User {name: $name})-[:FOLLOWS]->(friend)-[r:RATES]->(p:Product)
-        WHERE r.rating >= 4  // Zakładamy, że polecenie to ocena >= 4
-        WITH p, count(friend) as friend_count
-        WHERE friend_count >= $min_friends
-        RETURN p.name as Produkt, friend_count as Liczba_Polecen
-        ORDER BY friend_count DESC
+           MATCH (u:User {name: $name})-[:FOLLOWS]->(friend)-[r:RATES]->(p:Product)
+           WHERE r.rating >= $min_rating AND NOT (u)-[:RATES]->(p)
+           WITH p, collect(DISTINCT friend.name) as recommenders, count(DISTINCT friend) as friend_count
+           WHERE friend_count >= $min_friends
+           RETURN 
+               p.name as product,
+               friend_count as recommendation_count,
+               recommenders as recommended_by
+           ORDER BY friend_count DESC, p.name
+           """
+        try:
+            return self._execute_query(
+                query,
+                {
+                    "name": user_name,
+                    "min_friends": min_friends,
+                    "min_rating": min_rating,
+                },
+            )
+        except Neo4jError as e:
+            logger.error(f"Failed to get friend recommendations: {e}")
+            return []
+
+    def recommend_collaborative(
+        self, user_name: str, similarity_threshold: int = 1, min_rating: int = 4
+    ) -> list[dict[str, Any]]:
         """
-        return self._execute_query(query, {"name": user_name, "min_friends": min_friends})
+        Get collaborative filtering recommendations.
 
-    def rec_collaborative(self, user_name):
-        query = """
-        MATCH (u:User {name: $name})-[r1:RATES]->(p:Product)<-[r2:RATES]-(other:User)
-        WHERE abs(r1.rating - r2.rating) <= 1  // Znajdź użytkowników o podobnym guście (podobne oceny tych samych produktów)
-        WITH other, u
-        MATCH (other)-[r3:RATES]->(rec_p:Product)
-        WHERE NOT (u)-[:RATES]->(rec_p) AND r3.rating >= 4 // Znajdź co oni lubią, a czego ja nie ocenilem
-        RETURN rec_p.name as Produkt, count(*) as Waga_Rekomendacji
-        ORDER BY Waga_Rekomendacji DESC
+        Args:
+            user_name: Name of the user
+            similarity_threshold: Maximum rating difference for similarity
+            min_rating: Minimum rating for recommendations
+
+        Returns:
+            List of recommended products with recommendation weight
         """
-        return self._execute_query(query, {"name": user_name})
-
-    def visualize_user_graph(self, user_name):
         query = """
-        MATCH path = (u:User {name: $name})-[*1..2]-(node)
+        MATCH (u:User {name: $name})-[r1:RATES]->(p:Product)<-[r2:RATES]-(similar:User)
+        WHERE abs(r1.rating - r2.rating) <= $threshold
+        WITH similar, u, count(*) as shared_products
+        WHERE shared_products >= 2
+        MATCH (similar)-[r3:RATES]->(rec:Product)
+        WHERE NOT (u)-[:RATES]->(rec) AND r3.rating >= $min_rating
+        WITH rec, collect(DISTINCT similar.name) as similar_users, 
+             count(DISTINCT similar) as recommendation_weight,
+             avg(r3.rating) as avg_rating
+        RETURN 
+            rec.name as product,
+            recommendation_weight,
+            round(avg_rating * 100) / 100 as average_rating,
+            similar_users as recommended_by_similar
+        ORDER BY recommendation_weight DESC, avg_rating DESC
+        """
+        try:
+            return self._execute_query(
+                query,
+                {
+                    "name": user_name,
+                    "threshold": similarity_threshold,
+                    "min_rating": min_rating,
+                },
+            )
+        except Neo4jError as e:
+            logger.error(f"Failed to get collaborative recommendations: {e}")
+            return []
+
+    def get_user_network(self, user_name: str, depth: int = 2) -> Any:
+        if not 1 <= depth <= 3:
+            raise ValueError("Depth must be between 1 and 3")
+
+        query = f"""
+        MATCH path = (u:User {{name: $name}})-[*1..{depth}]-(node)
         RETURN path
+        LIMIT 200
         """
-        results = self.driver.session().run(query, name=user_name)
+        try:
+            with self.driver.session() as session:
+                return session.run(query, name=user_name)
+        except Neo4jError as e:
+            logger.error(f"Failed to get user network: {e}")
+            return None
 
-        net = Network(
-            height="500px", width="100%", bgcolor="#222222", font_color="white"
-        )
-
-        for record in results:
-            for node in record["path"].nodes:
-                color = "#00ff41" if "User" in node.labels else "#ff0055"
-                label = node["name"]
-                net.add_node(node.element_id, label=label, title=label, color=color)
-
-            for rel in record["path"].relationships:
-                net.add_edge(
-                    rel.start_node.element_id, rel.end_node.element_id, title=rel.type
-                )
-
-        return net
+    def get_user_stats(self, user_name: str) -> dict[str, int]:
+        query = """
+        MATCH (u:User {name: $name})
+        OPTIONAL MATCH (u)-[:FOLLOWS]->(following)
+        OPTIONAL MATCH (u)<-[:FOLLOWS]-(follower)
+        OPTIONAL MATCH (u)-[:RATES]->(rated)
+        RETURN 
+            count(DISTINCT following) as following_count,
+            count(DISTINCT follower) as follower_count,
+            count(DISTINCT rated) as rated_count
+        """
+        try:
+            result = self._execute_query(query, {"name": user_name})
+            if result:
+                return result[0]
+            return {"following_count": 0, "follower_count": 0, "rated_count": 0}
+        except Neo4jError as e:
+            logger.error(f"Failed to get user stats: {e}")
+            return {"following_count": 0, "follower_count": 0, "rated_count": 0}
