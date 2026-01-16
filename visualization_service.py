@@ -13,9 +13,7 @@ class VisualizationService:
         self.height = height
         self.width = width
 
-    def create_user_network(
-        self, query_result, show_ratings: bool = True
-    ) -> Network | None:
+    def create_user_network(self, query_result, selected_user:str,show_ratings: bool = True) -> Network | None:
         try:
             net = Network(
                 height=self.height,
@@ -27,9 +25,9 @@ class VisualizationService:
 
             net.barnes_hut(
                 gravity=-8000,
-                central_gravity=0.3,
-                spring_length=200,
-                spring_strength=0.001,
+                central_gravity=0.5,
+                spring_length=100,
+                spring_strength=0.01,
                 damping=0.09,
             )
 
@@ -46,10 +44,12 @@ class VisualizationService:
                         label = node["name"]
                         node_type = list(node.labels)[0]
                         color = self.NODE_COLORS.get(node_type, "#cccccc")
-
                         size = 25 if node_type == "User" else 20
 
                         title = f"{node_type}: {label}"
+                        if label == selected_user:
+                            size *=1.2
+                            color = "#ffffff"
 
                         net.add_node(
                             node_id,
@@ -61,29 +61,29 @@ class VisualizationService:
                         )
                         added_nodes.add(node_id)
 
-                for rel in path.relationships:
+                for relation in path.relationships:
                     edge_id = (
-                        rel.start_node.element_id,
-                        rel.end_node.element_id,
-                        rel.type,
+                        relation.start_node.element_id,
+                        relation.end_node.element_id,
+                        relation.type,
                     )
 
                     if edge_id not in added_edges:
-                        rel_type = rel.type
-                        color = self.RELATIONSHIP_COLORS.get(rel_type, "#888888")
+                        relation_type = relation.type
+                        color = self.RELATIONSHIP_COLORS.get(relation_type, "#888888")
 
-                        title = rel_type
-                        if show_ratings and rel_type == "RATES":
-                            rating = rel.get("rating")
-                            rating_type = rel.get("type", "rates")
+                        title = relation_type
+                        if show_ratings and relation_type == "RATES":
+                            rating = relation.get("rating")
+                            rating_type = relation.get("type", "rates")
                             if rating:
-                                title = f"{rel_type}: {rating}/5 ({rating_type})"
+                                title = f"{relation_type}: {rating}/5 ({rating_type})"
 
-                        width = 2 if rel_type == "FOLLOWS" else 3
+                        width = 2 if relation_type == "FOLLOWS" else 3
 
                         net.add_edge(
-                            rel.start_node.element_id,
-                            rel.end_node.element_id,
+                            relation.start_node.element_id,
+                            relation.end_node.element_id,
                             title=title,
                             color=color,
                             width=width,
@@ -99,12 +99,3 @@ class VisualizationService:
         except Exception as e:
             logger.error(f"Failed to create visualization: {e}")
             return None
-
-    def save_html(self, net: Network, filename: str) -> bool:
-        try:
-            net.save_graph(filename)
-            logger.info(f"Visualization saved to {filename}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save visualization: {e}")
-            return False

@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 
-from graph_repository import GraphRepository
+from graph_repository import GraphRepository, Rating
 from visualization_service import VisualizationService
 
 load_dotenv()
@@ -108,70 +108,10 @@ def render_data_management(repo: GraphRepository):
         subtab1, subtab2 = st.tabs(["Follow Relationships", "Product Ratings"])
 
         with subtab1:
-            st.subheader("Create Follow Relationship")
-
-            if len(users) < 2:
-                st.info("At least 2 users are needed to create follow relationships")
-            else:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    follower = st.selectbox("Follower", users, key="follower")
-                with col2:
-                    followee_options = [u for u in users if u != follower]
-                    followee = st.selectbox("Follows", followee_options, key="followee")
-
-                if st.button("Create Follow Relationship", type="primary"):
-                    try:
-                        if repo.create_follow_relationship(follower, followee):
-                            st.success(f"'{follower}' now follows '{followee}'")
-                        else:
-                            st.error("Failed to create relationship")
-                    except ValueError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+            render_follow_tab(users, repo)
 
         with subtab2:
-            st.subheader("Rate Product")
-
-            if not products:
-                st.info("No products available. Add some products first.")
-            else:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    rating_user = st.selectbox("User", users, key="rating_user")
-                with col2:
-                    rating_product = st.selectbox(
-                        "Product", products, key="rating_product"
-                    )
-
-                col3, col4 = st.columns(2)
-
-                with col3:
-                    rating = st.slider("Rating", 1, 5, 5, key="rating")
-                with col4:
-                    rating_type = st.selectbox(
-                        "Type",
-                        ["rates", "recommends", "discourages"],
-                        key="rating_type",
-                    )
-
-                if st.button("Save Rating", type="primary"):
-                    try:
-                        if repo.rate_product(
-                            rating_user, rating_product, rating, rating_type
-                        ):
-                            st.success(
-                                f"Rating saved: {rating_user} → {rating_product} ({rating}/5)"
-                            )
-                        else:
-                            st.error("Failed to save rating")
-                    except ValueError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+            render_rate_tab(users, products, repo)
 
     with tab3:
         st.subheader("Delete Data")
@@ -194,20 +134,72 @@ def render_data_management(repo: GraphRepository):
 
         with col2:
             products = repo.get_all_products()
-            if products:
-                product_to_delete = st.selectbox(
-                    "Select product to delete", products, key="del_prod"
-                )
-                if st.button("Delete Product", type="secondary"):
-                    if repo.delete_product(product_to_delete):
-                        st.success(f"Product '{product_to_delete}' deleted")
-                        st.rerun()
-                    else:
-                        st.error("Failed to delete product")
+            if not products:
+                return
 
+            product_to_delete = st.selectbox(
+                "Select product to delete", products, key="del_prod"
+            )
+            if st.button("Delete Product", type="secondary"):
+                if repo.delete_product(product_to_delete):
+                    st.success(f"Product '{product_to_delete}' deleted")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete product")
+
+def render_follow_tab(users, repo):
+    st.subheader("Create Follow Relationship")
+
+    if len(users) < 2:
+        st.info("At least 2 users are needed to create follow relationships")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        follower = st.selectbox("Follower", users, key="follower")
+    with col2:
+        followee_options = [u for u in users if u != follower]
+        followee = st.selectbox("Follows", followee_options, key="followee")
+
+    if st.button("Create Follow Relationship", type="primary"):
+        try:
+            repo.create_follow_relationship(follower, followee)
+            st.success(f"'{follower}' now follows '{followee}'")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+
+def render_rate_tab(users, products, repo):
+    st.subheader("Rate Product")
+
+    if not products:
+        st.info("No products available. Add some products first.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        rating_user = st.selectbox("User", users, key="rating_user")
+    with col2:
+        rating_product = st.selectbox("Product", products, key="rating_product")
+
+    col3, col4 = st.columns(2)
+    with col3:
+        rating = st.slider("Rating", 1, 5, 5, key="rating")
+    with col4:
+        rating_type = st.selectbox(
+            label="Type",
+            options=Rating,
+            key="rating_type",
+        )
+
+    if st.button("Save Rating", type="primary"):
+        try:
+            repo.rate_product(rating_user, rating_product, rating, rating_type)
+            st.success(f"Rating saved: {rating_user} > {rating_product} ({rating}/5)")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
-    """Render the analysis and recommendations section."""
     st.header("Analysis & Recommendations")
 
     users = repo.get_all_users()
@@ -236,7 +228,7 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
         records = repo.get_user_network(selected_user, depth)
 
         if records:
-            net = viz_service.create_user_network(records)
+            net = viz_service.create_user_network(records, selected_user=selected_user)
 
             if net:
                 html_data = net.generate_html()
@@ -259,7 +251,7 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
         st.markdown("##### Friend-Based Recommendations")
         st.caption("Products recommended by people you follow")
 
-        min_friends = st.number_input(
+        min_friends = st.slider(
             "Minimum recommenders",
             min_value=1,
             max_value=10,
@@ -282,9 +274,7 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
                     for friend in rec["recommended_by"]:
                         st.write(f"- {friend}")
         else:
-            st.info(
-                "No recommendations available. Your friends need to rate products first."
-            )
+            st.info("No recommendations available. Your friends need to rate products first.")
 
     with rec_col2:
         st.markdown("##### Collaborative Filtering")

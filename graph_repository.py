@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
@@ -9,6 +10,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()
 
+class Rating(StrEnum):
+    RECOMMENDS = "recommends"
+    DISCOURAGES = "discourages"
+    RATES = "rates"
 
 class GraphRepository:
     def __init__(self, uri: str, user: str, password: str):
@@ -62,10 +67,13 @@ class GraphRepository:
         if not name or not name.strip():
             raise ValueError("User name cannot be empty")
         query = "CREATE (u:User {name: $name}) RETURN u"
-
-        self._execute_query(query, {"name": name.strip()})
-        logger.info(f"User '{name}' added")
-        return True
+        try:
+            self._execute_query(query, {"name": name.strip()})
+            logger.info(f"User '{name}' added")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to add user '{name}': {e}")
+            raise
 
 
     def delete_user(self, user_name: str) -> bool:
@@ -73,10 +81,13 @@ class GraphRepository:
         MATCH (u:User {name: $name})
         DETACH DELETE u
         """
-
-        self._execute_query(query, {"name": user_name})
-        logger.info(f"User '{user_name}' deleted")
-        return True
+        try:
+            self._execute_query(query, {"name": user_name})
+            logger.info(f"User '{user_name}' deleted")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to delete user '{user_name}': {e}")
+            raise
 
 
     def add_product(self, name: str, category: str | None = None) -> bool:
@@ -88,9 +99,13 @@ class GraphRepository:
                 SET p.category = $category
                 RETURN p
                 """
-        self._execute_query(query, {"name": name.strip(), "category": category})
-        logger.info(f"Product '{name}' added/verified")
-        return True
+        try:
+            self._execute_query(query, {"name": name.strip(), "category": category})
+            logger.info(f"Product '{name}' added/verified")
+            return True
+        except Neo4jError as e:
+            logger.error(f"Failed to add product '{name}': {e}")
+            raise
 
 
     def delete_product(self, product_name: str) -> bool:
@@ -104,7 +119,7 @@ class GraphRepository:
             return True
         except Neo4jError as e:
             logger.error(f"Failed to delete product '{product_name}': {e}")
-            return False
+            raise
 
     def create_follow_relationship(self, follower: str, followee: str) -> bool:
         if follower == followee:
@@ -117,26 +132,20 @@ class GraphRepository:
                 """
 
         try:
-            result = self._execute_query(
-                query, {"follower": follower, "followee": followee}
-            )
-            if result:
-                logger.info(f"'{follower}' now follows '{followee}'")
-                return True
-            else:
-                logger.warning(f"Users not found: '{follower}' or '{followee}'")
-                return False
+            self._execute_query(query, {"follower": follower, "followee": followee})
+            logger.info(f"'{follower}' now follows '{followee}'")
+            return True
+
         except Neo4jError as e:
             logger.error(f"Failed to create follow relationship: {e}")
-            return False
+            raise
 
-    def rate_product(
-        self,
-        user: str,
-        product: str,
-        rating: int,
-        rating_type: Literal["recommends", "discourages", "rates"] = "rates",
-    ) -> bool:
+    def rate_product(self, user: str, product: str, rating: int,rating_type: Rating = Rating.RATES ) -> bool:
+        if rating > 2 and rating_type == "discourages":
+            raise ValueError("Ratings above 2 are only allowed for 'recommends' and 'discourages'")
+        if rating < 4 and rating_type == "recommends":
+            raise ValueError("Ratings below 4 are only allowed for 'discourages' and 'rates'")
+
         query = """
         MATCH (u:User {name: $user}), (p:Product {name: $product})
         MERGE (u)-[r:RATES]->(p)
@@ -144,7 +153,7 @@ class GraphRepository:
         RETURN r
         """
         try:
-            result = self._execute_query(
+            self._execute_query(
                 query,
                 {
                     "user": user,
@@ -153,15 +162,11 @@ class GraphRepository:
                     "type": rating_type,
                 },
             )
-            if result:
-                logger.info(f"'{user}' rated '{product}': {rating} ({rating_type})")
-                return True
-            else:
-                logger.error(f"User or product not found: '{user}', '{product}'")
-                return False
+            logger.info(f"'{user}' rated '{product}': {rating} ({rating_type})")
+            return True
         except Neo4jError as e:
             logger.error(f"Failed to save rating: {e}")
-            return False
+            raise
 
     def get_all_users(self) -> list[str]:
         query = "MATCH (u:User) RETURN u.name as name ORDER BY name"
@@ -181,9 +186,7 @@ class GraphRepository:
             logger.error(f"Failed to retrieve products: {e}")
             return []
 
-    def recommend_by_friends(
-        self, user_name: str, min_friends: int = 1, min_rating: int = 4
-    ) -> list[dict[str, Any]]:
+    def recommend_by_friends(self, user_name: str, min_friends: int = 1, min_rating: int = 4) -> list[dict[str, Any]]:
         query = """
            MATCH (u:User {name: $name})-[:FOLLOWS]->(friend)-[r:RATES]->(p:Product)
            WHERE r.rating >= $min_rating AND NOT (u)-[:RATES]->(p)
@@ -208,20 +211,7 @@ class GraphRepository:
             logger.error(f"Failed to get friend recommendations: {e}")
             return []
 
-    def recommend_collaborative(
-        self, user_name: str, similarity_threshold: int = 1, min_rating: int = 4
-    ) -> list[dict[str, Any]]:
-        """
-        Get collaborative filtering recommendations.
-
-        Args:
-            user_name: Name of the user
-            similarity_threshold: Maximum rating difference for similarity
-            min_rating: Minimum rating for recommendations
-
-        Returns:
-            List of recommended products with recommendation weight
-        """
+    def recommend_collaborative(self, user_name: str, similarity_threshold: int = 1, min_rating: int = 4) -> list[dict[str, Any]]:
         query = """
         MATCH (u:User {name: $name})-[r1:RATES]->(p:Product)<-[r2:RATES]-(similar:User)
         WHERE abs(r1.rating - r2.rating) <= $threshold

@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from graph_repository import GraphRepository
+from graph_repository import GraphRepository, Rating
 import random
 
 load_dotenv()
@@ -164,11 +164,11 @@ def seed_database():
             rating = max(1, min(5, base_rating + random.randint(-1, 1)))
 
             if rating >= 4:
-                rating_type = "recommends"
+                rating_type = Rating.RECOMMENDS
             elif rating <= 2:
-                rating_type = "discourages"
+                rating_type = Rating.DISCOURAGES
             else:
-                rating_type = "rates"
+                rating_type = Rating.RATES
 
             repo.rate_product(
                 user=user, product=product, rating=rating, rating_type=rating_type
