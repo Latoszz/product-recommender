@@ -11,7 +11,6 @@ load_dotenv()
 
 @st.cache_resource
 def get_repository() -> GraphRepository:
-    """Initialize and cache the database repository."""
     uri = os.getenv("NEO4J_URI")
     user = os.getenv("NEO4J_USER")
     password = os.getenv("NEO4J_PASSWORD")
@@ -30,7 +29,6 @@ def get_repository() -> GraphRepository:
 
 
 def render_sidebar():
-    """Render the sidebar with application information."""
     with st.sidebar:
         st.header("About")
         st.markdown("""
@@ -58,7 +56,6 @@ def render_sidebar():
 
 
 def render_data_management(repo: GraphRepository):
-    """Render the data management section."""
     st.header("Data Management")
 
     tab1, tab2, tab3 = st.tabs(["Add Data", "Create Relationships", "Delete Data"])
