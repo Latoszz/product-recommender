@@ -1,5 +1,6 @@
-import streamlit as st
 import os
+
+import streamlit as st
 from dotenv import load_dotenv
 
 from graph_repository import GraphRepository, Rating
@@ -69,33 +70,31 @@ def render_data_management(repo: GraphRepository):
             st.subheader("Add User")
             new_user = st.text_input("User name", key="new_user")
             if st.button("Add User", type="primary"):
-                    try:
-                        repo.add_user(new_user.strip())
-                        st.success(f"User '{new_user}' added successfully")
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Failed to add user: {e}")
-
+                try:
+                    repo.add_user(new_user.strip())
+                    st.success(f"User '{new_user}' added successfully")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Failed to add user: {e}")
 
         with col2:
             st.subheader("Add Product")
             new_product = st.text_input("Product name", key="new_product")
             product_category = st.text_input("Category (optional)", key="product_cat")
             if st.button("Add Product", type="primary"):
-                    try:
-                        repo.add_product(
-                            new_product.strip(),
-                            product_category.strip() if product_category else None,
-                        )
-                        st.success(f"Product '{new_product}' added successfully")
-                        st.rerun()
-                    except ValueError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Failed to add product: {e}")
-
+                try:
+                    repo.add_product(
+                        new_product.strip(),
+                        product_category.strip() if product_category else None,
+                    )
+                    st.success(f"Product '{new_product}' added successfully")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Failed to add product: {e}")
 
     with tab2:
         users = repo.get_all_users()
@@ -123,7 +122,9 @@ def render_data_management(repo: GraphRepository):
             users = repo.get_all_users()
             if users:
                 user_to_delete = st.selectbox(
-                    "Select user to delete", users, key="del_user"
+                    "Select user to delete",
+                    users,
+                    key="del_user",
                 )
                 if st.button("Delete User", type="secondary"):
                     if repo.delete_user(user_to_delete):
@@ -138,7 +139,9 @@ def render_data_management(repo: GraphRepository):
                 return
 
             product_to_delete = st.selectbox(
-                "Select product to delete", products, key="del_prod"
+                "Select product to delete",
+                products,
+                key="del_prod",
             )
             if st.button("Delete Product", type="secondary"):
                 if repo.delete_product(product_to_delete):
@@ -146,6 +149,7 @@ def render_data_management(repo: GraphRepository):
                     st.rerun()
                 else:
                     st.error("Failed to delete product")
+
 
 def render_follow_tab(users, repo):
     st.subheader("Create Follow Relationship")
@@ -198,6 +202,7 @@ def render_rate_tab(users, products, repo):
             st.success(f"Rating saved: {rating_user} > {rating_product} ({rating}/5)")
         except Exception as e:
             st.error(f"Error: {e}")
+
 
 def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
     st.header("Analysis & Recommendations")
@@ -260,7 +265,11 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
         )
 
         min_rating = st.slider(
-            "Minimum rating", min_value=1, max_value=5, value=4, key="friend_min_rating"
+            "Minimum rating",
+            min_value=1,
+            max_value=5,
+            value=4,
+            key="friend_min_rating",
         )
 
         friend_recs = repo.recommend_by_friends(selected_user, min_friends, min_rating)
@@ -268,7 +277,7 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
         if friend_recs:
             for rec in friend_recs:
                 with st.expander(
-                    f"**{rec['product']}** ({rec['recommendation_count']} recommendations)"
+                    f"**{rec['product']}** ({rec['recommendation_count']} recommendations)",
                 ):
                     st.write("Recommended by:")
                     for friend in rec["recommended_by"]:
@@ -290,25 +299,30 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
         )
 
         collab_min_rating = st.slider(
-            "Minimum rating", min_value=1, max_value=5, value=4, key="collab_min_rating"
+            "Minimum rating",
+            min_value=1,
+            max_value=5,
+            value=4,
+            key="collab_min_rating",
         )
 
         collab_recs = repo.recommend_collaborative(
-            selected_user, similarity, collab_min_rating
+            selected_user,
+            similarity,
+            collab_min_rating,
         )
 
         if collab_recs:
             for rec in collab_recs:
                 with st.expander(
-                    f"**{rec['product']}** (Weight: {rec['recommendation_weight']}, "
-                    f"Avg: {rec['average_rating']}/5)"
+                    f"**{rec['product']}** (Weight: {rec['recommendation_weight']}, Avg: {rec['average_rating']}/5)",
                 ):
                     st.write("Similar users who recommend this:")
                     for user in rec["recommended_by_similar"]:
                         st.write(f"- {user}")
         else:
             st.info(
-                "Not enough data for collaborative filtering. Rate more products and follow more users."
+                "Not enough data for collaborative filtering. Rate more products and follow more users.",
             )
 
 

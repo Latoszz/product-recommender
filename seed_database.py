@@ -1,7 +1,9 @@
 import os
-from dotenv import load_dotenv
-from graph_repository import GraphRepository, Rating
 import random
+
+from dotenv import load_dotenv
+
+from graph_repository import GraphRepository, Rating
 
 load_dotenv()
 
@@ -171,7 +173,10 @@ def seed_database():
                 rating_type = Rating.RATES
 
             repo.rate_product(
-                user=user, product=product, rating=rating, rating_type=rating_type
+                user=user,
+                product=product,
+                rating=rating,
+                rating_type=rating_type,
             )
             rating_count += 1
             print(f"  {user} rated {product}: {rating}/5 ({rating_type})")

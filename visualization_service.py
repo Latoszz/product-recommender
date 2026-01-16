@@ -1,5 +1,6 @@
-from pyvis.network import Network
 import logging
+
+from pyvis.network import Network
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class VisualizationService:
         self.height = height
         self.width = width
 
-    def create_user_network(self, query_result, selected_user:str,show_ratings: bool = True) -> Network | None:
+    def create_user_network(self, query_result, selected_user: str, show_ratings: bool = True) -> Network | None:
         try:
             net = Network(
                 height=self.height,
@@ -48,7 +49,7 @@ class VisualizationService:
 
                         title = f"{node_type}: {label}"
                         if label == selected_user:
-                            size *=1.2
+                            size *= 1.2
                             color = "#ffffff"
 
                         net.add_node(

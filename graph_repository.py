@@ -2,18 +2,20 @@ import logging
 from enum import StrEnum
 from typing import Any
 
+from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
-from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()
 
+
 class Rating(StrEnum):
     RECOMMENDS = "recommends"
     DISCOURAGES = "discourages"
     RATES = "rates"
+
 
 class GraphRepository:
     def __init__(self, uri: str, user: str, password: str):
@@ -25,7 +27,8 @@ class GraphRepository:
     def _connect(self) -> None:
         try:
             self.driver = GraphDatabase.driver(
-                self.uri, auth=(self.user, self.password)
+                self.uri,
+                auth=(self.user, self.password),
             )
             self.driver.verify_connectivity()
             logger.info("Successfully connected to Neo4j database")
@@ -53,7 +56,9 @@ class GraphRepository:
                 logger.warning(f"Constraint already exists or failed: {e}")
 
     def _execute_query(
-        self, query: str, parameters: dict[str, Any] | None = None
+        self,
+        query: str,
+        parameters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         try:
             with self.driver.session() as session:
@@ -75,7 +80,6 @@ class GraphRepository:
             logger.error(f"Failed to add user '{name}': {e}")
             raise
 
-
     def delete_user(self, user_name: str) -> bool:
         query = """
         MATCH (u:User {name: $name})
@@ -88,7 +92,6 @@ class GraphRepository:
         except Neo4jError as e:
             logger.error(f"Failed to delete user '{user_name}': {e}")
             raise
-
 
     def add_product(self, name: str, category: str | None = None) -> bool:
         if not name or not name.strip():
@@ -106,7 +109,6 @@ class GraphRepository:
         except Neo4jError as e:
             logger.error(f"Failed to add product '{name}': {e}")
             raise
-
 
     def delete_product(self, product_name: str) -> bool:
         query = """
@@ -140,7 +142,7 @@ class GraphRepository:
             logger.error(f"Failed to create follow relationship: {e}")
             raise
 
-    def rate_product(self, user: str, product: str, rating: int,rating_type: Rating = Rating.RATES ) -> bool:
+    def rate_product(self, user: str, product: str, rating: int, rating_type: Rating = Rating.RATES) -> bool:
         if rating > 2 and rating_type == "discourages":
             raise ValueError("Ratings above 2 are only allowed for 'recommends' and 'discourages'")
         if rating < 4 and rating_type == "recommends":
@@ -211,7 +213,9 @@ class GraphRepository:
             logger.error(f"Failed to get friend recommendations: {e}")
             return []
 
-    def recommend_collaborative(self, user_name: str, similarity_threshold: int = 1, min_rating: int = 4) -> list[dict[str, Any]]:
+    def recommend_collaborative(
+        self, user_name: str, similarity_threshold: int = 1, min_rating: int = 4
+    ) -> list[dict[str, Any]]:
         query = """
         MATCH (u:User {name: $name})-[r1:RATES]->(p:Product)<-[r2:RATES]-(similar:User)
         WHERE abs(r1.rating - r2.rating) <= $threshold
