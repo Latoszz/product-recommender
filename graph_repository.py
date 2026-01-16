@@ -61,45 +61,37 @@ class GraphRepository:
     def add_user(self, name: str) -> bool:
         if not name or not name.strip():
             raise ValueError("User name cannot be empty")
+        query = "CREATE (u:User {name: $name}) RETURN u"
 
-        query = "MERGE (u:User {name: $name}) RETURN u"
-        try:
-            self._execute_query(query, {"name": name.strip()})
-            logger.info(f"User '{name}' added/verified")
-            return True
-        except Neo4jError as e:
-            logger.error(f"Failed to add user '{name}': {e}")
-            return False
+        self._execute_query(query, {"name": name.strip()})
+        logger.info(f"User '{name}' added")
+        return True
+
 
     def delete_user(self, user_name: str) -> bool:
         query = """
         MATCH (u:User {name: $name})
         DETACH DELETE u
         """
-        try:
-            self._execute_query(query, {"name": user_name})
-            logger.info(f"User '{user_name}' deleted")
-            return True
-        except Neo4jError as e:
-            logger.error(f"Failed to delete user '{user_name}': {e}")
-            return False
+
+        self._execute_query(query, {"name": user_name})
+        logger.info(f"User '{user_name}' deleted")
+        return True
+
 
     def add_product(self, name: str, category: str | None = None) -> bool:
         if not name or not name.strip():
             raise ValueError("Product name cannot be empty")
 
         query = """
-                MERGE (p:Product {name: $name})
+                CREATE (p:Product {name: $name})
                 SET p.category = $category
                 RETURN p
                 """
-        try:
-            self._execute_query(query, {"name": name.strip(), "category": category})
-            logger.info(f"Product '{name}' added/verified")
-            return True
-        except Neo4jError as e:
-            logger.error(f"Failed to add product '{name}': {e}")
-            return False
+        self._execute_query(query, {"name": name.strip(), "category": category})
+        logger.info(f"Product '{name}' added/verified")
+        return True
+
 
     def delete_product(self, product_name: str) -> bool:
         query = """
@@ -149,6 +141,7 @@ class GraphRepository:
         MATCH (u:User {name: $user}), (p:Product {name: $product})
         MERGE (u)-[r:RATES]->(p)
         SET r.rating = $rating, r.type = $type
+        RETURN r
         """
         try:
             result = self._execute_query(
@@ -164,7 +157,7 @@ class GraphRepository:
                 logger.info(f"'{user}' rated '{product}': {rating} ({rating_type})")
                 return True
             else:
-                logger.warning(f"User or product not found: '{user}', '{product}'")
+                logger.error(f"User or product not found: '{user}', '{product}'")
                 return False
         except Neo4jError as e:
             logger.error(f"Failed to save rating: {e}")
@@ -270,7 +263,8 @@ class GraphRepository:
         """
         try:
             with self.driver.session() as session:
-                return session.run(query, name=user_name)
+                result = session.run(query, name=user_name)
+                return [record for record in result]
         except Neo4jError as e:
             logger.error(f"Failed to get user network: {e}")
             return None

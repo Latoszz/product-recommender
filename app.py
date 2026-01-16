@@ -1,5 +1,4 @@
 import streamlit as st
-import tempfile
 import os
 from dotenv import load_dotenv
 
@@ -70,7 +69,6 @@ def render_data_management(repo: GraphRepository):
             st.subheader("Add User")
             new_user = st.text_input("User name", key="new_user")
             if st.button("Add User", type="primary"):
-                if new_user and new_user.strip():
                     try:
                         repo.add_user(new_user.strip())
                         st.success(f"User '{new_user}' added successfully")
@@ -79,15 +77,13 @@ def render_data_management(repo: GraphRepository):
                         st.error(str(e))
                     except Exception as e:
                         st.error(f"Failed to add user: {e}")
-                else:
-                    st.warning("Please enter a user name")
+
 
         with col2:
             st.subheader("Add Product")
             new_product = st.text_input("Product name", key="new_product")
             product_category = st.text_input("Category (optional)", key="product_cat")
             if st.button("Add Product", type="primary"):
-                if new_product and new_product.strip():
                     try:
                         repo.add_product(
                             new_product.strip(),
@@ -99,8 +95,7 @@ def render_data_management(repo: GraphRepository):
                         st.error(str(e))
                     except Exception as e:
                         st.error(f"Failed to add product: {e}")
-                else:
-                    st.warning("Please enter a product name")
+
 
     with tab2:
         users = repo.get_all_users()
@@ -238,24 +233,17 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
     depth = st.slider("Network depth", 1, 3, 2, key="viz_depth")
 
     try:
-        result = repo.get_user_network(selected_user, depth)
+        records = repo.get_user_network(selected_user, depth)
 
-        if result:
-            net = viz_service.create_user_network(result)
+        if records:
+            net = viz_service.create_user_network(records)
 
             if net:
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".html", mode="w", encoding="utf-8"
-                ) as tmp:
-                    viz_service.save_html(net, tmp.name)
-                    with open(tmp.name, "r", encoding="utf-8") as f:
-                        html_data = f.read()
-                    st.components.v1.html(html_data, height=650)
-                    os.unlink(tmp.name)
+                html_data = net.generate_html()
+
+                st.components.v1.html(html_data, height=650)
             else:
-                st.info(
-                    "No network data to visualize. Add relationships to see the network."
-                )
+                st.info("No network data to visualize. Add relationships to see the network.")
         else:
             st.info("No network data available.")
     except Exception as e:
@@ -335,7 +323,6 @@ def render_analysis(repo: GraphRepository, viz_service: VisualizationService):
 
 
 def main():
-    """Main application entry point."""
     st.set_page_config(
         page_title="Neo4j Product Recommender",
         layout="wide",
